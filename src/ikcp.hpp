@@ -94,36 +94,40 @@ protected:
       );
   }
   virtual void handle_recvice(boost::system::error_code const& error,size_t bytes_transferred){
+    // std::cout<<"udp_recv:"<<bytes_transferred<<std::endl;
     if(!error){
       udp_handle(boost::asio::const_buffer(m_recv_buffer.data(),bytes_transferred),m_remote_endpoint);
     }
     start_recvice();
   }
-  virtual size_t udp_handle(boost::asio::const_buffer buffer,udp::endpoint const&endpoint){return 0;};
+  virtual size_t udp_handle(boost::asio::const_buffer buffer,udp::endpoint const&endpoint)=0;
 public:
   udp_server(boost::asio::io_context& io_context,udp::endpoint const&endpoint):m_io_context(io_context),m_socket(io_context,endpoint){
-    
   }
+  udp::endpoint local_endpoint()const{return m_socket.local_endpoint();}
   auto udp_send(boost::asio::const_buffer const&buffer,udp::endpoint const&endpoint){
+    // std::cout<<"udp_send:"<<buffer.size()<<std::endl;
     return m_socket.async_send_to(buffer,endpoint,boost::asio::use_future);
   }
+  virtual void initialize(){}
   virtual void start(){
+    initialize();
     start_recvice();
   }
 };
 
 
 
+class kcp_base:public udp_server{
 
-
-class kcp_server:public udp_server{
 public:
   class kcp_context{
-    kcp_server&m_server;
+    kcp_base&m_server;
     udp::endpoint m_endpoint;
     ikcp*m_kcp;
     boost::asio::steady_timer m_timer;
     std::chrono::system_clock::time_point m_time;
+    void*m_user;
     bool m_alive;
     int async_output(const char *buf, int len, ikcpcb *kcp){
       m_server.udp_send(boost::asio::buffer(buf,len),m_endpoint);
@@ -136,10 +140,11 @@ public:
       uint32_t now(){
         return std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
       }
-      kcp_context(kcp_server&server,udp::endpoint endpoint)
+      kcp_context(kcp_base&server,udp::endpoint endpoint)
         :m_server(server),m_endpoint(endpoint),m_kcp(nullptr),
         m_timer(server.m_io_context),
         m_alive(true),
+        m_user(nullptr),
         m_time(std::chrono::system_clock::now())
       {
         m_kcp=ikcp::create(server.conv_id(),this);
@@ -172,15 +177,23 @@ public:
         auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(delta);
         return m_alive&&ms.count()<m_server.timeout();
       }
+      void start(){
+        m_alive=true;
+        ping();
+      }
       void stop(){
         m_alive=false;
         m_timer.cancel();
         m_timer.wait();
       }
+      void user(void*user){m_user=user;}
+      template<class T>
+      T*user()const{return reinterpret_cast<T*>(m_user);}
       
       boost::asio::steady_timer& timer(){return m_timer;}
       ikcp*kcp()const{return m_kcp;}
-      udp::endpoint endpoint()const{return m_endpoint;}
+      udp::endpoint const& endpoint()const{return m_endpoint;}
+      void endpoint(udp::endpoint endpoint){m_endpoint=endpoint;}
       ~kcp_context(){
         m_kcp->release();
       }
@@ -188,29 +201,81 @@ public:
 private:
   uint32_t m_conv_id;
   size_t m_timeout;
-  std::unordered_map<udp::endpoint,std::unique_ptr<kcp_context>>m_kcps;
-  boost::array<char,0x10000>m_kcp_buffer;
   void check_kcp_recv(kcp_context*kcp){
     auto len=kcp->recv(boost::asio::mutable_buffer(m_kcp_buffer.data(),m_kcp_buffer.size()));
     if(len>0){
-      kcp_handle(boost::asio::const_buffer(m_kcp_buffer.data(),len));
+      kcp_handle(kcp,boost::asio::const_buffer(m_kcp_buffer.data(),len));
     }
   }
   size_t udp_handle(boost::asio::const_buffer buffer,udp::endpoint const&endpoint)override{
+    auto kcp=context(endpoint);
+    if(kcp){
+      kcp->ping();
+      auto len=kcp->input(buffer);
+      check_kcp_recv(kcp);
+      return len;
+    }
+    return 0;
+  }
+public:
+  kcp_base(boost::asio::io_context& io_context,udp::endpoint endpoint,uint32_t conv_id,size_t timeout=10000)
+    :udp_server(io_context,endpoint),m_conv_id(conv_id),
+      m_timeout(timeout)
+  {
+  }
+  void timeout(size_t timeout){m_timeout=timeout;}
+  size_t timeout()const{return m_timeout;}
+  uint32_t conv_id()const{return m_conv_id;}
+  virtual kcp_context const*context(udp::endpoint const&endpoint)const{return context(endpoint);};
+  virtual void kcp_handle(kcp_context const* kcp,boost::asio::const_buffer buffer){}
+
+  
+  void kcp_loop(kcp_context*kcp){
+    if(!kcp->alive()){
+      kcp_disconnect(kcp);
+      return;
+    }
+    auto _now=kcp->now();
+    kcp->update(_now);
+    auto next=kcp->check(_now);
+    auto duration=std::chrono::milliseconds(next-_now);
+    kcp->timer().expires_from_now(duration);
+    kcp->timer().async_wait(boost::bind(&kcp_base::kcp_loop,this,kcp));
+  }
+  virtual void handle_connect(kcp_context const*ctx){}
+  virtual void handle_disconnect(kcp_context const*ctx){}
+  virtual void kcp_disconnect(kcp_context*kcp){
+    handle_disconnect(kcp);
+    kcp->stop();
+    remove_context(kcp);
+  }
+  virtual void kcp_connect(kcp_context*kcp){
+    kcp->start();
+    kcp_loop(kcp);
+    handle_connect(kcp);
+  }
+protected:
+  virtual kcp_context*context(udp::endpoint const&endpoint)=0;
+  virtual void remove_context(kcp_context*kcp)=0;
+  
+  boost::array<char,0x10000>m_kcp_buffer;
+};
+
+
+class kcp_server:public kcp_base{
+  std::unordered_map<udp::endpoint,std::unique_ptr<kcp_context>>m_kcps;
+protected:
+  virtual kcp_context*context(udp::endpoint const&endpoint)override{
     auto kcp=find_endpoint(endpoint);
     if(!kcp){
-        kcp=add_endpoint(endpoint);
-        kcp_connect(kcp);
+      kcp=add_endpoint(endpoint);
+      kcp_connect(kcp);
     }
-    kcp->ping();
-    auto len=kcp->input(buffer);
-    check_kcp_recv(kcp);
-    return len;
+    return kcp;
   }
 public:
   kcp_server(boost::asio::io_context& io_context,udp::endpoint endpoint,uint32_t conv_id,size_t timeout=10000)
-    :udp_server(io_context,endpoint),m_conv_id(conv_id),
-      m_timeout(timeout)
+    :kcp_base(io_context,endpoint,conv_id,timeout)
   {
   }
   kcp_context*find_endpoint(udp::endpoint const&endpoint){
@@ -224,9 +289,6 @@ public:
     auto ctx=std::make_unique<kcp_context>(*this,endpoint);
     return m_kcps.emplace(endpoint,std::move(ctx)).first->second.get();
   }
-  void set_timeout(size_t timeout){m_timeout=timeout;}
-  size_t timeout()const{return m_timeout;}
-  uint32_t conv_id()const{return m_conv_id;}
 
   int push(boost::asio::const_buffer buffer){
     int total=0;
@@ -235,39 +297,10 @@ public:
     }
     return total;
   }
-  void kcp_disconnect(kcp_context*kcp){
-    handle_disconnect(kcp);
-    kcp->stop();
+  
+  void remove_context(kcp_context*kcp)override{
     m_kcps.erase(kcp->endpoint());
   }
-  void kcp_connect(kcp_context*kcp){
-    kcp_loop(kcp);
-    handle_connect(kcp);
-  }
-  void kcp_loop(kcp_context*kcp){
-    if(!kcp->alive()){
-      kcp_disconnect(kcp);
-      return;
-    }
-    auto _now=kcp->now();
-    kcp->update(_now);
-    auto next=kcp->check(_now);
-    auto duration=std::chrono::milliseconds(next-_now);
-    kcp->timer().expires_from_now(duration);
-    kcp->timer().async_wait(boost::bind(&kcp_server::kcp_loop,this,kcp));
-  }
-  void start()override{
-    udp_server::start();
-  }
-  virtual void kcp_handle(boost::asio::const_buffer buffer){
-
-  }
-  virtual bool authorize(boost::asio::const_buffer key){
-    return true;
-  }
-  virtual void initialize(kcp_context const*ctx){}
-  virtual void handle_connect(kcp_context const*ctx){}
-  virtual void handle_disconnect(kcp_context const*ctx){}
 };
 
 
@@ -277,108 +310,25 @@ public:
 
 
 
-class kcp_client:public udp_server{
-
-  uint32_t m_conv_id;
-  size_t m_timeout;
+class kcp_client:public kcp_base{
   boost::array<char,0x10000>m_kcp_buffer;
-  // boost::asio::steady_timer m_timer;
-  
-
-  class kcp_context{
-    kcp_client&m_server;
-    udp::endpoint m_endpoint;
-    ikcp*m_kcp;
-    boost::asio::steady_timer timer;
-    std::chrono::system_clock::time_point m_time;
-    int async_output(const char *buf, int len, ikcpcb *kcp){
-      auto result=m_server.udp_send(boost::asio::buffer(buf,len),m_endpoint);
-      result.wait();
-      return result.get();
-    }
-    static int kcp_output(const char *buf, int len, ikcpcb *kcp, void *user){
-      return reinterpret_cast<kcp_context*>(user)->async_output(buf, len, kcp);
-    }
-    static uint32_t now(){
-      return std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now()).time_since_epoch().count();
-    }
-    public:
-      kcp_context(kcp_client&server,udp::endpoint endpoint):m_server(server),m_endpoint(endpoint),m_kcp(nullptr),timer(server.m_io_context){
-        m_kcp=ikcp::create(server.conv_id(),this);
-        m_kcp->setoutput(kcp_output);
-        m_kcp->nodelay(1, 20, 2, 1);
-        loop();
-      }
-      int recv(boost::asio::mutable_buffer buffer){
-        return m_kcp->recv(buffer.data(),buffer.size());
-      }
-      int send(boost::asio::const_buffer buffer){
-        return m_kcp->send(buffer.data(),buffer.size());
-      }
-      int input(boost::asio::const_buffer buffer){
-        return m_kcp->input(buffer.data(),buffer.size());
-      }
-      void update(uint32_t time){
-        m_kcp->update(time);
-      }
-      uint32_t check(uint32_t time){
-        return m_kcp->check(time);
-      }
-      auto ping(){
-        m_time=std::chrono::system_clock::now();
-        return m_time;
-      }
-      bool alive(){
-        auto delta=std::chrono::system_clock::now()-m_time;
-        auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(delta);
-        return ms.count()<m_server.timeout();
-      }
-      udp::endpoint endpoint()const{return m_endpoint;}
-      ikcp*kcp()const{return m_kcp;}
-      void loop(){
-        auto _now=now();
-        m_kcp->update(_now);
-        auto next=m_kcp->check(_now);
-        auto duration=std::chrono::milliseconds(next-_now);
-        timer.expires_from_now(duration);
-        timer.async_wait(boost::bind(&kcp_context::loop,this));
-      }
-      ~kcp_context(){
-        timer.cancel();
-        m_kcp->release();
-      }
-  };
-
   kcp_context m_kcp;
-  void check_kcp_recv(kcp_context*kcp){
-    auto len=kcp->recv(boost::asio::mutable_buffer(m_kcp_buffer.data(),m_kcp_buffer.size()));
-    if(len>0){
-      kcp_handle(boost::asio::const_buffer(m_kcp_buffer.data(),len));
-    }
-  }
-  size_t udp_handle(boost::asio::const_buffer buffer,udp::endpoint const&endpoint)override{
-    m_kcp.ping();
-    auto len=m_kcp.input(buffer);
-    check_kcp_recv(&m_kcp);
-    return len;
+  kcp_context*context(udp::endpoint const&endpoint)override{
+    auto kcp=&m_kcp;
+    return (server_endpoint()==kcp->endpoint())?kcp:nullptr;
   }
 public:
-  kcp_client(boost::asio::io_context& io_context,udp::endpoint endpoint,udp::endpoint server_endpoint,uint32_t conv_id,size_t timeout=1000)
-    :udp_server(io_context,endpoint),m_conv_id(conv_id),
-      // m_timer(io_context),
-      m_kcp(*this,server_endpoint),
-      m_timeout(timeout)
+  kcp_client(boost::asio::io_context& io_context,udp::endpoint endpoint,udp::endpoint server_endpoint,uint32_t conv_id,size_t timeout=10000)
+    :kcp_base(io_context,endpoint,conv_id,timeout),
+    m_kcp(*this,server_endpoint)
   {
   }
-  void set_timeout(size_t timeout){m_timeout=timeout;}
-  size_t timeout()const{return m_timeout;}
-  uint32_t conv_id()const{return m_conv_id;}
-  kcp_context const&context()const{return m_kcp;}
-  
   void start()override{
-    udp_server::start();
-    initialize();
+    kcp_base::start();
+    kcp_connect(&m_kcp);
   }
-  virtual void initialize(){}
-  virtual void kcp_handle(boost::asio::const_buffer buffer){}
+  void remove_context(kcp_context*kcp)override{};
+  udp::endpoint const& server_endpoint()const{return m_kcp.endpoint();}
+  void server_endpoint(udp::endpoint server){m_kcp.endpoint(server);}
+  kcp_context const*context()const{return &m_kcp;}
 };

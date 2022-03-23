@@ -11,19 +11,19 @@
 
 #include <ctime>
 #include <iostream>
+#include <string>
 #include "ikcp.hpp"
 class client:public kcp_client{
     boost::asio::steady_timer m_req_timer;
 public:
-  client(boost::asio::io_context& io_context,udp::endpoint endpoint,udp::endpoint server_endpoint,uint32_t conv_id,size_t timeout=1000)
+  client(boost::asio::io_context& io_context,udp::endpoint endpoint,udp::endpoint server_endpoint,uint32_t conv_id,size_t timeout=10000)
   :kcp_client(io_context,endpoint,server_endpoint,conv_id,timeout),m_req_timer(io_context){}
-  void kcp_handle(boost::asio::const_buffer buffer)override{
-      std::cout<<"success"<<std::endl;
-      m_req_timer.cancel();
+  void kcp_handle(kcp_context const* kcp,boost::asio::const_buffer buffer)override{
+      std::cout<<"success:"<<std::string((char const*)buffer.data(),buffer.size())<<std::endl;
   }
   void initialize()override{
     std::cout<<"say hello"<<std::endl;
-    udp_send(boost::asio::buffer("hello",5),context().endpoint());
+    context()->send(boost::asio::buffer("hello",5));
     m_req_timer.expires_from_now(std::chrono::seconds(1));
     m_req_timer.async_wait(std::bind(&client::initialize,this));
     return;

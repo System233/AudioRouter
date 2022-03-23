@@ -19,18 +19,12 @@ using boost::asio::ip::udp;
 
 class server:public kcp_server{
 public:
-  server(boost::asio::io_context& io_context,udp::endpoint endpoint,uint32_t conv_id,size_t timeout=1000)
+  server(boost::asio::io_context& io_context,udp::endpoint endpoint,uint32_t conv_id,size_t timeout=10000)
   :kcp_server(io_context,endpoint,conv_id,timeout){
 
   }
-  virtual void kcp_handle(boost::asio::const_buffer buffer)override{
-    std::cout<<"server recv"<<std::endl;
-  }
-  virtual bool authorize(boost::asio::const_buffer key)override{
-    std::cout<<"authorize:"<<(char const*)key.data()<<std::endl;
-    return !std::strcmp("hello",(char const*)key.data());
-  }
-  virtual void initialize(kcp_context const*ctx)override{
+  virtual void kcp_handle(kcp_context const* ctx,boost::asio::const_buffer buffer)override{
+    // std::cout<<"server recv"<<std::endl;
     ctx->send(boost::asio::buffer("hello",6));
   }
   virtual void handle_connect(kcp_context const*ctx)override{
