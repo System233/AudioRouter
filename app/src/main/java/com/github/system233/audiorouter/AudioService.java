@@ -27,7 +27,7 @@ public class AudioService extends Service implements Runnable, Closeable {
     long instance;
     Thread mThread;
     static {
-        System.loadLibrary("kcp");
+        System.loadLibrary("kcp_c");
     }
     @Override
     public void run() {

@@ -1,13 +1,7 @@
-
-//
-// server.cpp
-// ~~~~~~~~~~
-//
-// Copyright (c) 2003-2021 Christopher M. Kohlhoff (chris at kohlhoff dot com)
-//
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
-//
+// Copyright (c) 2022 github.com/System233
+// 
+// This software is released under the MIT License.
+// https://opensource.org/licenses/MIT
 
 #include <ctime>
 #include <iostream>
@@ -96,11 +90,19 @@ public:
     mAudioClient->Release();
   }
 };
-int main()
+int main(int argc,char**argv)
 {
+  int port=10000;
+  if(argc==2){
+    port=atoi(argv[1]);
+  } else if(argc>2){
+    std::cout<<"Usage:\nkcp_s [port]"<<std::endl;
+    return 0;
+  }
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
   try
   {
+    std::cout<<"listening on ::"<<port<<std::endl;
     boost::asio::io_context io_context;
     server kcp(io_context,udp::endpoint(udp::v4(),10000),1);
     kcp.start();

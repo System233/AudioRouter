@@ -3,7 +3,6 @@
 //
 
 #include <jni.h>
-#include "ikcp.hpp"
 /*
 
 template<class T,class R>
@@ -84,7 +83,8 @@ Java_com_github_system233_audiorouter_KCP_loop(JNIEnv *env, jclass thiz, jlong c
 #include <ctime>
 #include <iostream>
 #include <string>
-#include "ikcp.hpp"
+
+#include <ikcp.hpp>
 #define TAG "KCP"
 
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG,TAG ,__VA_ARGS__)

@@ -1,0 +1,36 @@
+# Copyright (c) 2022 github.com/System233
+# 
+# This software is released under the MIT License.
+# https://opensource.org/licenses/MIT
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+  push:
+    # tags:
+    #   - "v*"
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: Build Win32
+        run: |
+           mkdir build
+           cd build
+           cmake ..
+           cmake --build . --config Release
+      - name: Build APK
+        run: gradlew assembleDebug --stacktrace
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{github.ref_name}}
+          tag_name: ${{github.ref_name}}
+          files: |
+            app/build/outputs/app-debug.apk
+            build/kcp_s.exe
+            build/kcp_c.exe
