@@ -2,7 +2,7 @@
 # 
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
-
+name: Build Win32 and APK
 on:
   schedule:
     - cron: '0 0 * * *'
@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          submodules: true
+          submodules: recursive
       - name: Build Win32
         run: |
            mkdir build
