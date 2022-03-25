@@ -24,7 +24,7 @@ jobs:
            cmake .. -DBUILD_TESTING=no
            cmake --build . --config Release 
       - name: Build APK
-        run: gradlew assembleDebug --stacktrace
+        run: .\gradlew assembleDebug --stacktrace
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
