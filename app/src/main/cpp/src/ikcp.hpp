@@ -2,6 +2,8 @@
 // 
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
+#ifndef IKCP_HPP
+#define IKCP_HPP
 #include "ikcp.h"
 #include <cstdint>
 class ikcp:public ikcpcb{
@@ -60,12 +62,6 @@ public:
   }
   static void allocator(decltype(malloc) malloc,decltype(free) free){
     ikcp_allocator(malloc,free);
-  }
-};
-template<>
-class std::default_delete<ikcp>{
-  void operator()(ikcp*pkcp){
-    pkcp->release();
   }
 };
 
@@ -334,3 +330,5 @@ public:
   void server_endpoint(udp::endpoint server){m_kcp.endpoint(server);}
   kcp_context const*context()const{return &m_kcp;}
 };
+
+#endif //IKCP_HPP

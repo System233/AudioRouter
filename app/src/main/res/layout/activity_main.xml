@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:id="@+id/textView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="60dp"
+        android:text="Server Name"
+        android:textSize="14sp"
+        app:layout_constraintBaseline_toBaselineOf="@+id/editServerName"
+        app:layout_constraintEnd_toStartOf="@+id/editServerName"
+        app:layout_constraintHorizontal_bias="0.531"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/textView3" />
+
+    <EditText
+        android:id="@+id/editServerName"
+        android:layout_width="246dp"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="20dp"
+        android:layout_marginBottom="24dp"
+        android:ems="10"
+        android:hint="127.0.0.1"
+        android:inputType="text"
+        android:minHeight="48dp"
+        app:layout_constraintBottom_toTopOf="@+id/editServerPort"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:autofillHints="" />
+
+    <TextView
+        android:id="@+id/textView2"
+        android:layout_width="80dip"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="20dp"
+        android:text="@string/text_server_port"
+        android:textSize="14sp"
+        app:layout_constraintBaseline_toBaselineOf="@+id/editServerPort"
+        app:layout_constraintEnd_toStartOf="@+id/editServerPort"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <EditText
+        android:id="@+id/editServerPort"
+        android:layout_width="244dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="115dp"
+        android:layout_marginEnd="20dp"
+        android:ems="10"
+        android:hint="10000"
+        android:inputType="number|numberDecimal"
+        android:minHeight="48dp"
+        android:text="10000"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="@+id/editServerName"
+        app:layout_constraintTop_toTopOf="@+id/textView3"
+        android:autofillHints="" />
+
+    <TextView
+        android:id="@+id/textView3"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginTop="28dp"
+        android:text="@string/connect_to_audio_server"
+        android:textSize="20sp"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <Button
+        android:id="@+id/btn_connect"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="260dp"
+        android:text="@string/text_connect"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
