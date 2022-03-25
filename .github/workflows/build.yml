@@ -21,8 +21,8 @@ jobs:
         run: |
            mkdir build
            cd build
-           cmake ..
-           cmake --build . --config Release
+           cmake .. -DBUILD_TESTING=no
+           cmake --build . --config Release 
       - name: Build APK
         run: gradlew assembleDebug --stacktrace
       - name: Create Release
