@@ -34,6 +34,6 @@ jobs:
           name: ${{github.ref_name}}
           tag_name: ${{github.ref_name}}
           files: |
-            app/build/outputs/app-debug.apk
-            build/kcp_s.exe
-            build/kcp_c.exe
+            ./app/build/outputs/apk/debug/app-debug.apk
+            ./build/kcp_s.exe
+            ./build/kcp_c.exe
