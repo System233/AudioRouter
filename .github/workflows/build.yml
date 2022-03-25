@@ -26,8 +26,7 @@ jobs:
       - name: Build APK
         shell: cmd
         run: |
-          echo org.gradle.java.home=%JAVA_HOME_11_X64% >> gradle.properties
-          echo sdk.dir=%ANDROID_HOME% >> local.properties
+          set JAVA_HOME=%JAVA_HOME_11_X64%
           gradlew assembleDebug --stacktrace
       - name: Create Release
         uses: softprops/action-gh-release@v1
