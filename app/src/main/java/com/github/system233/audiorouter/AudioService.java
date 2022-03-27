@@ -23,7 +23,7 @@ public class AudioService extends Service implements Runnable, Closeable {
     static final String TAG="AudioService";
     AudioTrack mAudioTrack;
     String mServerIP;
-    int mServerPort;
+    int mServerPort,mNotId;
     long instance;
     Thread mThread;
     static {
@@ -77,7 +77,10 @@ public class AudioService extends Service implements Runnable, Closeable {
             mThread=null;
         }
     }
-
+    public void ping(long ping){
+        NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        notificationManager.notify(mNotId,make(String.format("传输延迟 %dms",ping)));
+    }
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -87,12 +90,19 @@ public class AudioService extends Service implements Runnable, Closeable {
         start();
         return null;
     }
-
+    Notification make(String text){
+        return new Notification.Builder(this,getClass().toString())
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(text)
+                .setContentText(getString(R.string.service_message))
+                .build();
+    }
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand: ");
         mServerIP=intent.getStringExtra("ServerName");
         mServerPort=intent.getIntExtra("ServerPort",10000);
+        mNotId=startId;
         NotificationChannel notificationChannel = new NotificationChannel(getClass().toString(),
                 getString(R.string.app_name), NotificationManager.IMPORTANCE_HIGH);
         notificationChannel.enableLights(true);
@@ -102,12 +112,8 @@ public class AudioService extends Service implements Runnable, Closeable {
         NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         notificationManager.createNotificationChannel(notificationChannel);
         start();
-        startForeground(startId, new Notification.Builder(this,getClass().toString())
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle(getString(R.string.service_title))
-                .setContentText(getString(R.string.service_message))
-                .build());
-        return super.onStartCommand(intent, flags, startId);
+        startForeground(mNotId, make(getString(R.string.service_title)));
+        return super.onStartCommand(intent, flags, mNotId);
     }
 
     @Override

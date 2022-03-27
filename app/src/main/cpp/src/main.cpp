@@ -95,6 +95,7 @@ Java_com_github_system233_audiorouter_KCP_loop(JNIEnv *env, jclass thiz, jlong c
 //#include "audio.hpp"
 static JavaVM* g_vm;
 static jmethodID m_callback;
+static jmethodID m_ping_id;
 static jfieldID m_instance;
 struct PingPacket{
     char name[8]={'p','i','n','g'};
@@ -112,7 +113,7 @@ class client:public kcp_client{
     JNIEnv *m_env;
     jobject m_thiz;
     bool m_connected=false;
-    int m_ping=0;
+    uint64_t m_ping=0;
 public:
   client(boost::asio::io_context& io_context,udp::endpoint endpoint,udp::endpoint server_endpoint,uint32_t conv_id,size_t timeout=10000)
   :kcp_client(io_context,endpoint,server_endpoint,conv_id,timeout),m_req_timer(io_context),m_ping_timer(io_context){}
@@ -126,7 +127,9 @@ public:
     auto clazz=m_env->GetObjectClass(thiz);
     m_instance=m_env->GetFieldID(clazz,"instance","J");
     m_env->SetLongField(thiz,m_instance,(jlong)this);
-    m_callback=m_env->GetMethodID(clazz,"handle","([B)V");
+      m_callback=m_env->GetMethodID(clazz,"handle","([B)V");
+      m_ping_id=m_env->GetMethodID(clazz,"ping","(J)V");
+
     m_env->DeleteLocalRef(clazz);
     LOGD("m_callback %p",m_callback);
     LOGD("m_instance %p",m_instance);
@@ -138,10 +141,18 @@ public:
   void stop(){
     m_io_context.stop();
   }
+  int ping(){
+      return m_ping;
+  }
+  void ping(int p){
+      m_ping=p;
+      m_env->CallVoidMethod(m_thiz,m_ping_id,m_ping);
+  }
   void kcp_handle(kcp_context const* kcp,boost::asio::const_buffer buffer)override{
 //    LOGD("kcp_handle %p",buffer.size());
     if(auto pkg=PingPacket::check(buffer)){
-      m_ping=now()-pkg->time;
+        ping(now()-pkg->time);
+
       return;
     }
     m_connected=true;
@@ -167,11 +178,12 @@ public:
     PingPacket pkt;
     pkt.time=now();
     context()->send(boost::asio::buffer(&pkt,sizeof(pkt)));
-    m_ping_timer.expires_from_now(std::chrono::milliseconds(100));
-    m_req_timer.async_wait(std::bind(&client::start_ping,this));
+    m_ping_timer.expires_from_now(std::chrono::milliseconds (100));
+    m_ping_timer.async_wait(std::bind(&client::start_ping,this));
   }
   void initialize()override{
-
+      request();
+      start_ping();
     LOGD("initialize");
   }
 };
@@ -221,8 +233,8 @@ Java_com_github_system233_audiorouter_AudioService_start(JNIEnv *env, jobject th
 extern "C"
 JNIEXPORT void JNICALL
 Java_com_github_system233_audiorouter_AudioService_stop(JNIEnv *env, jobject thiz) {
-  // TODO: implement stop()
-  auto s=(client*)env->GetLongField(thiz,m_instance);
-  s->stop();
-  LOGD("Stop");
+    // TODO: implement stop()
+    auto s=(client*)env->GetLongField(thiz,m_instance);
+    s->stop();
+    LOGD("Stop");
 }
