@@ -96,14 +96,26 @@ Java_com_github_system233_audiorouter_KCP_loop(JNIEnv *env, jclass thiz, jlong c
 static JavaVM* g_vm;
 static jmethodID m_callback;
 static jfieldID m_instance;
+struct PingPacket{
+    char name[8]={'p','i','n','g'};
+    uint64_t time;
+    static PingPacket*check(boost::asio::const_buffer buffer){
+      static PingPacket test;
+      if(buffer.size()==sizeof(PingPacket)&&!std::strncmp(test.name,(char const*)buffer.data(),sizeof(test.name))){
+        return (PingPacket*)(buffer.data());
+      }
+      return nullptr;
+    }
+};
 class client:public kcp_client{
-    boost::asio::steady_timer m_req_timer;
+    boost::asio::steady_timer m_req_timer,m_ping_timer;
     JNIEnv *m_env;
     jobject m_thiz;
     bool m_connected=false;
+    int m_ping=0;
 public:
   client(boost::asio::io_context& io_context,udp::endpoint endpoint,udp::endpoint server_endpoint,uint32_t conv_id,size_t timeout=10000)
-  :kcp_client(io_context,endpoint,server_endpoint,conv_id,timeout),m_req_timer(io_context){}
+  :kcp_client(io_context,endpoint,server_endpoint,conv_id,timeout),m_req_timer(io_context),m_ping_timer(io_context){}
     ~client(){
       m_env->DeleteGlobalRef(m_thiz);
     }
@@ -122,31 +134,45 @@ public:
   static bool test(boost::asio::const_buffer buffer){
     return buffer.size()>4&&(*(int*)buffer.data()==0x12345678);
   }
+  static uint64_t now(){return time(NULL);}
   void stop(){
     m_io_context.stop();
   }
   void kcp_handle(kcp_context const* kcp,boost::asio::const_buffer buffer)override{
 //    LOGD("kcp_handle %p",buffer.size());
+    if(auto pkg=PingPacket::check(buffer)){
+      m_ping=now()-pkg->time;
+      return;
+    }
     m_connected=true;
     auto buf=m_env->NewByteArray(buffer.size());
     auto ptr=m_env->GetByteArrayElements(buf,nullptr);
     std::memcpy(ptr,buffer.data(),buffer.size());
     m_env->ReleaseByteArrayElements(buf,ptr,JNI_COMMIT);
-    auto clazz=m_env->GetObjectClass(m_thiz);
-    auto m_callback=m_env->GetMethodID(clazz,"handle","([B)V");
+//    auto clazz=m_env->GetObjectClass(m_thiz);
+//    auto m_callback=m_env->GetMethodID(clazz,"handle","([B)V");
     m_env->CallVoidMethod(m_thiz,m_callback,buf);
     m_env->DeleteLocalRef(buf);
-    m_env->DeleteLocalRef(clazz);
+//    m_env->DeleteLocalRef(clazz);
   }
-  void initialize()override{
+  void request(){
     if(m_connected){
       return;
     }
-    LOGD("initialize");
     context()->send(boost::asio::buffer("format",5));
     m_req_timer.expires_from_now(std::chrono::milliseconds(1000));
-//    m_req_timer.async_wait([this] { initialize(); });
-    m_req_timer.async_wait(std::bind(&client::initialize,this));
+    m_req_timer.async_wait(std::bind(&client::request,this));
+  }
+  void start_ping(){
+    PingPacket pkt;
+    pkt.time=now();
+    context()->send(boost::asio::buffer(&pkt,sizeof(pkt)));
+    m_ping_timer.expires_from_now(std::chrono::milliseconds(100));
+    m_req_timer.async_wait(std::bind(&client::start_ping,this));
+  }
+  void initialize()override{
+
+    LOGD("initialize");
   }
 };
 //int main()

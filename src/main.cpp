@@ -18,7 +18,17 @@ const CLSID CLSID_MMDeviceEnumerator = __uuidof(MMDeviceEnumerator);
 const IID IID_IMMDeviceEnumerator = __uuidof(IMMDeviceEnumerator);
 const IID IID_IAudioClient = __uuidof(IAudioClient);
 const IID IID_IAudioCaptureClient = __uuidof(IAudioCaptureClient);
-
+struct PingPacket{
+    char name[8]={'p','i','n','g'};
+    uint64_t time;
+    static PingPacket*check(boost::asio::const_buffer buffer){
+        static PingPacket test;
+        if(buffer.size()==sizeof(PingPacket)&&!std::strncmp(test.name,(char const*)buffer.data(),sizeof(test.name))){
+            return (PingPacket*)(buffer.data());
+        }
+        return nullptr;
+    }
+};
 class server:public kcp_server{
   IAudioCaptureClient *mCaptureClient = NULL;
   IAudioClient *mAudioClient = NULL;
@@ -33,6 +43,10 @@ public:
   }
   virtual void kcp_handle(kcp_context const* ctx,boost::asio::const_buffer buffer)override{
     // std::cout<<"server recv"<<std::endl;
+    if(auto pkt=PingPacket::check(buffer)){
+        ctx->send(buffer);
+        return;
+    }
     AudioFormat format(pwfx);
     ctx->send(boost::asio::buffer(&format,sizeof(format)));
     // ctx->send(boost::asio::buffer("hello",6));
