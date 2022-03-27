@@ -1,3 +1,6 @@
 [submodule "libs/asio-kcp"]
 	path = libs/asio-kcp
 	url = https://github.com/System233/asio-kcp.git
+[submodule "libs/fdk-aac"]
+	path = libs/fdk-aac
+	url = https://github.com/mstorsjo/fdk-aac.git
