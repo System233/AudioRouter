@@ -26,6 +26,8 @@ public class AudioService extends Service implements Runnable, Closeable {
     int mServerPort,mNotId;
     long instance;
     Thread mThread;
+    byte[] mBuffer=new byte[0x10000];
+    float[]mPCMBuffer=new float[mBuffer.length/4];
     static {
         System.loadLibrary("kcp_c");
     }
@@ -34,7 +36,7 @@ public class AudioService extends Service implements Runnable, Closeable {
         mThread=Thread.currentThread();
         start(mServerIP,mServerPort);
     }
-    public void handle(byte[]buf){
+    public void handle(byte[]buf,int len){
         try{
 //        Log.d(TAG, "handle: "+buf.length);
             if(Thread.interrupted()&&instance!=0){
@@ -48,13 +50,12 @@ public class AudioService extends Service implements Runnable, Closeable {
                 mAudioTrack.play();
                 Log.d(TAG, "setup: "+mAudioTrack);
             }else if(mAudioTrack!=null){
-                ByteBuffer buffer=ByteBuffer.wrap(buf);
+                ByteBuffer buffer=ByteBuffer.wrap(buf,0,len);
                 buffer.order(ByteOrder.LITTLE_ENDIAN);
-                float[] fbuf=new float[buf.length/4];
-                for(int i=0;i<fbuf.length;++i){
-                    fbuf[i]=buffer.getFloat();
+                for(int i=0;i<len/4;++i){
+                    mPCMBuffer[i]=buffer.getFloat();
                 }
-                mAudioTrack.write(fbuf,0,fbuf.length, AudioTrack.WRITE_NON_BLOCKING);
+                mAudioTrack.write(mPCMBuffer,0,len/4, AudioTrack.WRITE_NON_BLOCKING);
             }
         }catch (Throwable throwable){
             Log.e(TAG, "handle: ",throwable );
@@ -77,9 +78,16 @@ public class AudioService extends Service implements Runnable, Closeable {
             mThread=null;
         }
     }
+    long mPing=0;
+    NotificationManager notificationManager;
     public void ping(long ping){
-        NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        notificationManager.notify(mNotId,make(String.format("传输延迟 %dms",ping)));
+        if(ping!=mPing){
+            mPing=ping;
+            if(notificationManager==null){
+                notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            }
+            notificationManager.notify(mNotId,make(String.format("传输延迟 %dms",ping)));
+        }
     }
     @Nullable
     @Override

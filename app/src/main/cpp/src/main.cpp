@@ -112,24 +112,27 @@ class client:public kcp_client{
     boost::asio::steady_timer m_req_timer,m_ping_timer;
     JNIEnv *m_env;
     jobject m_thiz;
+    jbyteArray m_jbuffer;
     bool m_connected=false;
     uint64_t m_ping=0;
 public:
   client(boost::asio::io_context& io_context,udp::endpoint endpoint,udp::endpoint server_endpoint,uint32_t conv_id,size_t timeout=10000)
   :kcp_client(io_context,endpoint,server_endpoint,conv_id,timeout),m_req_timer(io_context),m_ping_timer(io_context){}
     ~client(){
-      m_env->DeleteGlobalRef(m_thiz);
+        m_env->DeleteLocalRef(m_jbuffer);
+        m_env->DeleteLocalRef(m_thiz);
     }
   void set_env(JNIEnv *env,jobject thiz){
     env->GetJavaVM(&g_vm);
     g_vm->GetEnv((void**)&m_env,JNI_VERSION_1_6);
-    m_thiz=m_env->NewGlobalRef(thiz);
+    m_thiz=thiz;
     auto clazz=m_env->GetObjectClass(thiz);
     m_instance=m_env->GetFieldID(clazz,"instance","J");
     m_env->SetLongField(thiz,m_instance,(jlong)this);
-      m_callback=m_env->GetMethodID(clazz,"handle","([B)V");
+      m_callback=m_env->GetMethodID(clazz,"handle","([BI)V");
       m_ping_id=m_env->GetMethodID(clazz,"ping","(J)V");
-
+     auto buffer_field=m_env->GetFieldID(clazz,"mBuffer","[B");
+    m_jbuffer=(jbyteArray)m_env->GetObjectField(thiz,buffer_field);
     m_env->DeleteLocalRef(clazz);
     LOGD("m_callback %p",m_callback);
     LOGD("m_instance %p",m_instance);
@@ -156,14 +159,12 @@ public:
       return;
     }
     m_connected=true;
-    auto buf=m_env->NewByteArray(buffer.size());
-    auto ptr=m_env->GetByteArrayElements(buf,nullptr);
+    auto ptr=m_env->GetByteArrayElements(m_jbuffer,nullptr);
     std::memcpy(ptr,buffer.data(),buffer.size());
-    m_env->ReleaseByteArrayElements(buf,ptr,JNI_COMMIT);
+    m_env->ReleaseByteArrayElements(m_jbuffer,ptr,JNI_COMMIT);
 //    auto clazz=m_env->GetObjectClass(m_thiz);
 //    auto m_callback=m_env->GetMethodID(clazz,"handle","([B)V");
-    m_env->CallVoidMethod(m_thiz,m_callback,buf);
-    m_env->DeleteLocalRef(buf);
+    m_env->CallVoidMethod(m_thiz,m_callback,m_jbuffer,(jint)buffer.size());
 //    m_env->DeleteLocalRef(clazz);
   }
   void request(){
@@ -178,7 +179,7 @@ public:
     PingPacket pkt;
     pkt.time=now();
     context()->send(boost::asio::buffer(&pkt,sizeof(pkt)));
-    m_ping_timer.expires_from_now(std::chrono::milliseconds (100));
+    m_ping_timer.expires_from_now(std::chrono::milliseconds (1000));
     m_ping_timer.async_wait(std::bind(&client::start_ping,this));
   }
   void initialize()override{
